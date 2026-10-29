@@ -1,0 +1,3 @@
+# Netlify redirects. Keep the old beta link pointing at the current build
+# (same URL as betaApkUrl in site.js). 302 so it can change with each build.
+/lumora-beta.apk  https://expo.dev/artifacts/eas/MNlD3xhGfq7mUXnzgKzZytzlfnBC5gWPHVXr9VFTKhU.apk  302

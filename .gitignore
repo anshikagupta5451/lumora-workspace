@@ -1,0 +1,10 @@
+# This repo holds the workspace docs, AI context and the website.
+# The app and backend are their own git repos.
+lumora-app/
+lumora-backend/
+
+.env
+.env.*
+node_modules/
+.DS_Store
+Thumbs.db
