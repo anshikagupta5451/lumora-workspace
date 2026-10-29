@@ -7,8 +7,8 @@
 | Participant | Anshika Gupta |
 | Projects | `lumora-app/` (Expo React Native), `lumora-backend/` (Express 5 + Prisma + Postgres), and this workspace (docs, cross-project AI rules and agents, website). Three git repos: [lumora-app](https://github.com/anshikagupta5451/lumora-app), [lumora-backend](https://github.com/anshikagupta5451/lumora-backend), [lumora-workspace](https://github.com/anshikagupta5451/lumora-workspace) |
 | Demo login | `demo@demo.lumora.app` / `Demo@1234` (demo data, see [Run it](#8-run-it)) |
-| Live | Website https://getlumora.site · Android beta APK https://getlumora.site/lumora-beta.apk |
-| Demo video | TODO(you): link |
+| Live | Website https://getlumora.site · Android beta APK (v1.2.0) https://getlumora.site/lumora-beta.apk · API on Render (`/health`: https://lumora-backend-jysb.onrender.com/health) |
+| Demo video | Linked in the submission form |
 
 ---
 
@@ -29,10 +29,12 @@ The demo follows one primary journey:
 1. **Onboarding:** skin type, concerns, sensitivities, goals and monthly budget. This becomes the skin profile every rule reads.
 2. **Today's brief (Home):** a headline and up to 4 tips. Each tip cites its data: UV 9, AQI 140, humidity 80%, "your niacinamide expires in 5 days", average mood from recent check-ins. It ends with one product pick that respects budget, sensitivities and "Not for me".
 3. **"Is this right for me?"**: scan a barcode, or photograph the front of a pack (on-device OCR matched against the catalog and Open Beauty Facts). The verdict checks sensitivities, skin type, concerns, clashes and duplicates with your shelf, budget, and reviews from people with your skin type.
+   - **Match %:** "82% match for you", plus one bar per skin concern with its reason ("Acne 95%: has salicylic acid, niacinamide, zinc"). Computed by the same rules from the same checks. A sensitivity hit caps it at 15%; budget is left out.
+   - **Products in no database** (common for Indian brands): Gemini identifies the product from the pack text and finds its ingredient list. The verdict and match % on it are still the rules', so AI supplies data, never the judgement. These results are labelled in the app.
 4. **Daily check-in and streak:** mood, note and photos. A nightly 8 pm reminder protects the streak.
 5. **Community:** reviews filtered by skin type, a feed, and "Popular in the community".
 
-Supporting features: face scan (Gemini vision with a non-AI heuristic fallback), AM/PM routines, a "My Products" shelf with expiry and low-stock tracking, an ingredient glossary, bounties, admin catalog tools, and three themes.
+Supporting features: face scan with markers on the photo (Gemini vision with a non-AI heuristic fallback; the photo is cropped to the oval the user aligned with), AM/PM routines, a "My Products" shelf with expiry and low-stock tracking, an ingredient glossary, bounties, and three themes. There are also basic admin catalog tools for the team; they aren't part of the user app.
 
 ## 3. Pre-existing work (disclosure)
 
@@ -40,12 +42,10 @@ Lumora existed before the hackathon. Git history (dates are commit dates):
 
 | Period | What git shows |
 | --- | --- |
-| 24 Jul – 28 Sep 2026 (before the hackathon) | App and backend created. Auth, onboarding, skin profile, weather, community feed/posts/comments/images, check-ins and streaks, routines, shelf, reviews, face scan, and the backend rule engines (`dailyBrief.ts`, `productVerdict.ts`, `ingredientRules.ts`, `scanSuggestions.ts`). 7 app + 9 backend commits, 28 of the 29 database migrations |
-| 1 – 30 Oct 2026 (hackathon) | Photo product scanner with on-device OCR + catalog/Open Beauty Facts matching (`productMatch.ts`, `product-scanner.tsx`, `ProductMatchSheet`). "Is this right for me?" screens (`product-check.tsx`, `ProductVerdict`). Daily brief and scan-suggestion UI. Admin catalog screens. Google sign-in. Forgot/reset password. Removal of Expo template leftovers. **All AI context engineering** (AGENTS.md hierarchy, subagents, skills, STATUS.md). **All tests and the bug fixes they led to.** Token refresh. Demo data. Security clean-up. This document |
+| 24 Jul – 28 Sep 2026 (before the hackathon) | App and backend created. Auth, onboarding, skin profile, weather, community feed/posts/comments/images, check-ins and streaks, routines, shelf, reviews, face scan, and the backend rule engines (`dailyBrief.ts`, `productVerdict.ts`, `ingredientRules.ts`, `scanSuggestions.ts`). 7 app + 9 backend commits, 29 of the 30 database migrations |
+| 1 – 30 Oct 2026 (hackathon) | Photo product scanner with on-device OCR + catalog/Open Beauty Facts matching (`productMatch.ts`, `product-scanner.tsx`, `ProductMatchSheet`). "Is this right for me?" screens (`product-check.tsx`, `ProductVerdict`). **Match % and per-concern bars** (`productVerdict.ts`). **AI identification of products missing from every database** (`aiProductLookup.ts`, `POST /products/identify`). Face-scan oval crop (`ovalCropRect`). Daily brief and scan-suggestion UI. Admin catalog screens. Google sign-in. Forgot/reset password, sent from a verified email domain. Token refresh. Removal of Expo template leftovers. **All AI context engineering** (AGENTS.md hierarchy, subagents, skills, STATUS.md). **All tests and the bug fixes they led to.** Demo data. Security clean-up. Deployment (Render, Netlify, EAS preview builds). This document |
 
-The first `lumora-app` commit (24 Jul, "Initial commit") is the unmodified `create-expo-app` template.
-
-TODO(you): check this table, and add anything from October that git doesn't show clearly (the October commits are large and have generic messages).
+The first `lumora-app` commit (24 Jul, "Initial commit") is the unmodified `create-expo-app` template. Some October commits are large with generic messages; the table above lists what they contain.
 
 ## 4. Architecture
 
@@ -59,11 +59,11 @@ TODO(you): check this table, and add anything from October that git doesn't show
 └──────────────────────────┬─────────────────────────────────┘
                            │ REST + JSON, Bearer JWT
 ┌──────────────────────────┴─────────────────────────────────┐
-│ lumora-backend (Express 5, TypeScript via tsx)             │
+│ lumora-backend (Express 5, TypeScript via tsx, on Render)  │
 │ src/routes/   thin handlers, requireAuth / requireAdmin    │
-│ src/lib/      the product: rule engines (brief, verdict,   │
-│               ingredients, matching, suggestions), Gemini  │
-│               + heuristic fallback, external clients       │
+│ src/lib/      the product: rule engines (brief, verdict +  │
+│               match %, ingredients, matching, suggestions),│
+│               Gemini + fallbacks, external clients         │
 │ src/jobs/     node-cron streak reminder (Expo push)        │
 └───────┬───────────────┬───────────────┬────────────────────┘
    Prisma 6        Open-Meteo,      Gemini (optional),
@@ -78,7 +78,10 @@ Deeper docs: [lumora-app/docs/ARCHITECTURE.md](lumora-app/docs/ARCHITECTURE.md),
 | Decision | Why | Cost |
 | --- | --- | --- |
 | **Rules over AI for every recommendation** | Skincare advice must be explainable and must not make things up. Each tip and verdict check shows the number or ingredient behind it, and rules can be unit-tested | Less flexible than an LLM; the rule lists need curating |
-| **AI only where rules can't see:** face scan, "from the web" suggestions | Pixels and open-web search need a model | Each AI path needs a non-AI fallback, or the feature is hidden when `GEMINI_API_KEY` is missing or quota runs out. Model output is validated and clamped before it is stored |
+| **AI only where rules can't see:** face scan, "from the web" suggestions, identifying products missing from every database | Pixels and the open web need a model | Each AI path needs a non-AI fallback, or the feature is hidden when `GEMINI_API_KEY` is missing or quota runs out. Model output is validated and clamped before it is stored |
+| **AI supplies data, rules decide.** For unknown products, Gemini returns only a name and ingredient list; the match % is computed by the tested rules | An AI-given score would vary between scans, couldn't explain itself and couldn't be tested | Answers are cached to protect the free-tier quota; a bare barcode is only looked up with live web search, so the model can't invent a product from digits |
+| **Match % built from the verdict's own checks**, not a separate score | The number and its reasons always agree | The weights are hand-picked and documented, not learned |
+| **Fix on the server where possible** (for example the face-scan crop has a default screen shape) | Already-installed APKs benefit without an update | Slightly less precise on unusual screens until the app is updated |
 | **No shared code between app and backend** | Two separate repos with a simple REST contract | Types are duplicated by hand; the `api-contract-checker` agent audits them |
 | **Stateless JWT:** 15-minute access token, 30-day refresh token | Simple, no session store | Logout can't revoke a refresh token on the server (listed under limitations) |
 | **No build step (`tsx`), Node's built-in test runner** | Fewer moving parts; no new dependencies for tests | `tsx` must be available in production |
@@ -90,23 +93,23 @@ Deeper docs: [lumora-app/docs/ARCHITECTURE.md](lumora-app/docs/ARCHITECTURE.md),
 - bcrypt password hashes. JWT auth on every user route. Writes are scoped to `req.userId`, so users can't touch each other's rows. Admin is an email allowlist.
 - Google sign-in verifies the ID token's audience, and refuses unverified emails before linking to an existing account.
 - Public user objects only expose `id`/`name`. Password-reset codes are hashed and expire.
-- AI output is treated as untrusted input: scores are coerced and clamped to 0–100, boxes to 0–1000, text is length-capped, and `detected` is derived from the score.
+- AI output is treated as untrusted input: scores are coerced and clamped to 0–100, boxes to 0–1000, text is length-capped, and `detected` is derived from the score. AI product lookups with fewer than 3 ingredients are rejected.
 
 ## 5. How I used AI
 
-AI tool: **Claude Code** (CLI and VS Code extension). TODO(you): add any other tools you used (Cursor, ChatGPT, Gemini, …) and what for.
+AI tools: **Claude Code** (CLI and VS Code extension) with Claude models, its reviewer subagents (Claude Sonnet), the official Expo plugin, and pinned Prisma skills. **Google Gemini** is used inside the product (face scan, web suggestions, identifying unknown products), not to write code.
 
 AI was used at every stage:
 
 | Stage | How |
 | --- | --- |
 | Define | Turned the idea into the "one question" scope and the rule lists (sensitivity → ingredient groups, active clashes) |
-| Design | Explored data models and the API shape; decided rules vs AI per feature |
+| Design | Explored data models and the API shape; decided rules vs AI per feature. For the match %, the AI laid out three options (rules only, rules + AI product lookup, AI scoring) with a recommendation; I chose |
 | Build | Implemented screens and routes under the AGENTS.md rules |
-| Test | Two agents wrote 136 unit tests in parallel (section 6) |
+| Test | Two agents wrote the first unit tests in parallel; every later feature came with tests. 159 now (section 6) |
 | Review | Reviewer subagents (`app-reviewer`, `backend-reviewer`, `api-contract-checker`) check changes against house rules |
 | Document | READMEs, ARCHITECTURE.md, STATUS.md, and this file. The AI drafted them; I edited and checked them against the code |
-| Debug | Environment failures (section 7) |
+| Debug and ops | Environment and deployment failures, the face-scan marker bug from a phone screenshot (section 7), the email domain DNS, the website's APK redirect |
 
 ### Context engineering
 
@@ -134,7 +137,8 @@ The AI gets the same layered context every session:
 - **Database:** agents may never run `prisma migrate reset`, `db push --force-reset`, `DROP`/`TRUNCATE`, or a seed against the hosted database without explicit permission. The demo seed only touches `@demo.lumora.app` users and is reversible (`unseed:demo`).
 - **Secrets:** agents must never read out, print, commit or edit `.env`, keystores or `google-services.json`. Only variable *names* are inspected.
 - **AI features:** no new model calls unless asked; every model call needs a fallback; model output must be validated.
-- **Git:** the AI never commits or pushes without asking me. Claude Code's permission system blocked an AI attempt to rewrite git remote URLs (section 7), so that change stays with a human.
+- **Git:** the AI never commits or pushes without asking me. Work goes on a feature branch and reaches `main` through a pull request I merge. Claude Code's permission system blocked an AI attempt to rewrite git remote URLs (section 7), and later an AI attempt to run a production database deploy, so both stayed with a human.
+- **Approval before writes:** when a deploy failed with Prisma error P3005, the AI ran only read-only checks (`migrate status`, `migrate diff` against the live schema), explained the write it planned, and waited for my yes before recording the migration history. No data was touched.
 - **Verification:** an agent may not claim a change works on a device unless it ran there. It must report exactly which commands it ran.
 
 ## 6. AI-assisted QA
@@ -144,9 +148,9 @@ The AI gets the same layered context every session:
 - The brief required behaviour, edge and negative tests, no database or network (Gemini is tested through a `fetch` stub), and inputs passed explicitly so tests don't depend on the date.
 - Agents were not allowed to change `src/`. Suspected bugs had to be written as *skipped* tests with a `BUG:` reason.
 
-**Result:** 136 tests in 7 files (`lumora-backend/test/`), run with `npm test` (Node's built-in `node:test`, no new dependencies).
+**Result:** 136 tests in 7 files at first. Later features came with their own tests: +4 for the face-scan oval crop, +19 for the match % and the AI product lookup (Gemini replies, quota errors, "not found" and caching all simulated with a stubbed API). **Now 159 tests in 8 files** (`lumora-backend/test/`), run with `npm test` (Node's built-in `node:test`, no new dependencies).
 
-**Human validation.** For each reported bug, I (with the AI) read the code, confirmed the bug, fixed it, removed the `skip` and re-ran the suite. **The tests found 10 real bugs. All are fixed, and the suite ends at 136 pass, 0 fail, 0 skipped.**
+**Human validation.** For each reported bug, I (with the AI) read the code, confirmed the bug, fixed it, removed the `skip` and re-ran the suite. **The tests found 10 real bugs. All are fixed, and the suite ends at 159 pass, 0 fail, 0 skipped.**
 
 | # | Bug the tests found | Fix |
 | --- | --- | --- |
@@ -158,7 +162,11 @@ The AI gets the same layered context every session:
 | 9 | With no ingredients, price or reviews, the verdict still said "Good fit" | Returns "Not enough info to judge this one yet" |
 | 10 | The daily brief could pick a product you **own** but marked "Not for me", or that contains your sensitivity | Same filters as catalog picks |
 
-**Other checks run:** `tsc --noEmit` (app and backend, clean), ESLint (0 errors), and a curl smoke test as the demo user: login, token refresh (valid, garbage, and access-token-as-refresh), streak, feed, popular, shelf, routines, bounties and daily brief.
+**Other checks run:**
+- `tsc --noEmit` (app and backend, clean) and ESLint (0 errors);
+- a curl smoke test as the demo user: login, token refresh (valid, garbage, and access-token-as-refresh), streak, feed, popular, shelf, routines, bounties and daily brief;
+- live checks after each deploy: the new endpoint on Render answers `401` (exists) rather than `404`, and the website serves the right APK;
+- manual testing on an Android phone with development and preview builds: face scan, product scanning, and the AI lookup for unknown products.
 
 **Not covered:** route handlers, and the app (no automated UI tests). The face-scan tests use synthetic images, so they check behaviour, not accuracy.
 
@@ -171,8 +179,12 @@ The AI gets the same layered context every session:
 | The backend crashed: the Prisma client had been generated on Linux (`node_modules` copied between machines) | Added `postinstall: prisma generate`, so every install builds the engine for its own OS |
 | The "8 pm" streak reminder used the server clock; on a UTC cloud host it would fire at 1:30 am IST | Pinned the cron to `Asia/Kolkata` and documented `TZ` |
 | Settings showed three notification toggles the AI had generated as UI but never wired up | Removed them; Settings now describes only the reminder that exists. Built UI is not a built feature |
-| While preparing this submission, the AI found my **GitHub token embedded in the git remote URLs**. Claude Code's permission guard stopped the AI from changing remotes on its own | TODO(you): confirm once done: "I revoked the token and fixed the remotes by hand." Secrets can hide in `.git/config`, not just `.env` |
+| While preparing this submission, the AI found my **GitHub token embedded in the git remote URLs**. Claude Code's permission guard stopped the AI from changing remotes on its own | The remotes were fixed by hand and now hold no token. Secrets can hide in `.git/config`, not just `.env` |
 | Access tokens expired after 15 minutes and nothing used the refresh token, so the app quietly broke mid-session | Added `/auth/refresh`, plus refresh-and-retry in `apiFetch` with a single shared in-flight refresh |
+| On my phone, the face-scan markers landed on my neck and T-shirt. The AI's original analysis assumed the photo matched the screen, but the camera preview fills a tall screen and shows only the middle of the 3:4 photo | From my screenshot, the AI worked out the geometry. The backend now crops each photo to the on-screen oval, with a default screen shape so already-installed APKs were fixed too. 4 tests cover it. Lesson: test camera features on a real device |
+| The production deploy failed with Prisma **P3005**: the hosted database had every table but no migration history | Read-only checks first (`migrate status`, then `migrate diff` showed the live schema exactly matched), then a baseline with my approval. Never "fix" a live database by resetting it |
+| The AI reported that the new features were **"MISSING"** from the build I was about to publish | Checking the actual files in that commit showed they were there; the AI's check had a scripting mistake. Verify an AI's claim against evidence before acting on it |
+| While building the match %, the AI also changed when an unrelated "Take the skin quiz" link appears | It noticed and reverted its own change before shipping. Changes outside the request get reverted, even small "improvements" |
 
 ## 8. Run it
 
@@ -183,7 +195,7 @@ cp .env.example .env          # fill in DATABASE_URL, JWT secrets
 npm install                   # also generates the Prisma client
 npx prisma migrate deploy
 npm run seed && npm run seed:bounties && npm run seed:demo
-npm test                      # 136 tests
+npm test                      # 159 tests
 npm run dev                   # http://localhost:4000/health
 
 # app
@@ -195,20 +207,23 @@ npx expo start -c             # dev build: npx expo run:android
 
 Log in as `demo@demo.lumora.app` / `Demo@1234`. The account has an 11-day check-in run ending yesterday, so checking in during the demo shows the streak. It also has a shelf with a serum expiring in 5 days, two routines, reviews, posts and bookmarks. Remove all demo data with `npm run unseed:demo`.
 
-TODO(you): deployment link, if you deploy the backend (it is ready: `npm start`, set the env vars and `TZ=Asia/Kolkata`).
+**Deployed:** the API runs on Render (`npm start`, env vars from `.env.example`, `TZ=Asia/Kolkata`), the beta APK is an EAS preview build pointing at it, and the website is on Netlify.
 
 ## 9. Limitations and next steps
 
-- Backend runs locally; not yet deployed.
 - No automated tests for routes or the app.
 - Refresh tokens can't be revoked server-side.
-- Heuristic face-scan ranges need retuning against real selfies now that the region bug is fixed.
+- The offline face-scan heuristic is a pixel-statistics estimate, not face detection; its ranges need tuning against real selfies.
+- The AI product lookup depends on Gemini's free-tier quota. Barcode-only lookups need Google Search grounding, which most free keys lack, so photographing the pack works better for unknown products.
+- The API is on a free hosting tier and can be slow to respond after idling.
+- Admin catalog tools are basic and not part of the user app.
 - Premium has a flag but no purchase flow. Shared routines have a database column but no screen.
 - Push notifications: only the streak reminder exists.
 - Store launch blockers: placeholder Android package name, and the Play signing SHA-1 for Google sign-in.
+- Next: route integration tests and CI, on-device face landmarks, a review queue that turns verified AI-found products into catalog entries, refresh-token rotation, and a separate staging database.
 
 ## 10. Dependencies
 
 Main runtime dependencies: Expo SDK 54, React Native 0.81, expo-router 6, NativeWind 4, zustand 5, expo-camera, ML Kit text recognition, expo-notifications, expo-secure-store / Express 5, Prisma 6, jsonwebtoken, bcrypt, google-auth-library, sharp, node-cron, expo-server-sdk, Supabase JS, Resend.
 
-External services: Neon Postgres, Open-Meteo (no key), Open Beauty Facts (no key), Google Gemini (optional), Supabase Storage, Resend (optional), Expo push.
+External services: Neon Postgres, Render (API hosting), Open-Meteo (no key), Open Beauty Facts (no key), Google Gemini (optional), Supabase Storage, Resend (optional), Expo push, EAS Build, Netlify (website).
